@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title id="pageTitle">ركض الألوان المستقبلية</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800;900&family=Tajawal:wght@400;500;700&display=swap');
+
+  :root{
+    --bg: #05020c;
+    --neon-cyan: #00f6ff;
+    --neon-magenta: #ff2fb0;
+    --neon-violet: #8a2eff;
+    --panel: rgba(10, 6, 28, 0.72);
+    --line: rgba(0, 246, 255, 0.25);
+    --c-red: #ff1626;
+    --c-blue: #1462ff;
+    --c-green: #00e676;
+    --c-yellow: #ffd500;
+    --c-purple: #9b30ff;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; user-select:none; }
+
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background: var(--bg);
+    font-family: 'Tajawal', 'Cairo', sans-serif;
+    touch-action: none;
+  }
+
+  #stage{ position:fixed; inset:0; width:100%; height:100%; }
+  canvas#gl{ position:absolute; inset:0; display:block; width:100%; height:100%; }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute; inset:0; pointer-events:none;
+    display:flex; flex-direction:column;
+    padding: max(10px, env(safe-area-inset-top)) 14px 18px 14px;
+    z-index: 5;
+    gap: 8px;
+  }
+
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    gap:8px;
+  }
+
+  .stats-group{ display:flex; gap:6px; flex:1; justify-content:center; }
+
+  .stat{
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(30,20,60,0.55), rgba(10,6,24,0.55));
+    border: 1px solid rgba(0,246,255,0.28);
+    border-top-color: rgba(255,255,255,0.35);
+    border-radius: 14px;
+    padding: 8px 10px;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35), 0 0 18px rgba(0,246,255,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
+    text-align: center;
+    min-width: 62px;
+  }
+  .stat::before{
+    content:'';
+    position:absolute; inset:0;
+    background: linear-gradient(120deg, rgba(255,255,255,0.14), transparent 45%);
+    pointer-events:none;
+  }
+  .stat .label{ font-size:10px; color:#8fe9ff; letter-spacing:.5px; opacity:.85; }
+  .stat .value{ font-family:'Cairo',sans-serif; font-weight:800; font-size:18px; color:#fff; text-shadow:0 0 10px var(--neon-cyan); }
+
+  .life-dot{
+    width:11px; height:11px; border-radius:50%;
+    background: var(--neon-violet);
+    box-shadow: 0 0 8px var(--neon-violet), 0 0 2px #fff;
+    transition: opacity .25s, transform .25s;
+  }
+  .life-dot.off{ opacity:.15; box-shadow:none; background:#333; transform:scale(.7); }
+
+  .prompt-wrap{
+    align-self:center;
+    text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+  }
+  .prompt-label{
+    font-size:11px; color:#c9c3ff; opacity:.9; letter-spacing:.5px;
+    background: linear-gradient(180deg, rgba(30,20,60,0.55), rgba(10,6,24,0.55));
+    border:1px solid rgba(0,246,255,0.28); border-top-color: rgba(255,255,255,0.3);
+    border-radius:20px;
+    padding:4px 14px;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 3px 14px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .prompt-word{
+    font-family:'Cairo',sans-serif; font-weight:900; font-size: clamp(26px, 7.5vw, 40px);
+    line-height:1.1;
+    letter-spacing: 1px;
+    filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 0 16px currentColor);
+    transition: transform .12s ease;
+  }
+  .prompt-word.pulse{ animation: pulseWord .35s ease; }
+  @keyframes pulseWord{ 0%{transform:scale(1);} 40%{transform:scale(1.18);} 100%{transform:scale(1);} }
+
+  .lives{ align-self:center; display:flex; gap:7px; }
+
+  .hint{
+    align-self:center;
+    margin-top: auto;
+    color:#8fe9ff; opacity:.65; font-size:12px; text-align:center;
+  }
+
+  .flash{
+    position:absolute; inset:0; pointer-events:none; opacity:0; z-index:4;
+    transition: opacity .12s ease-out;
+  }
+  .flash.show-good{ opacity:1; background: radial-gradient(circle at 50% 20%, rgba(57,255,136,0.35), transparent 65%); }
+  .flash.show-bad{ opacity:1; background: radial-gradient(circle at 50% 20%, rgba(255,51,85,0.4), transparent 65%); }
+
+  /* ---------- Overlays ---------- */
+  .overlay{
+    position:absolute; inset:0; z-index:20;
+    display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at 50% 30%, rgba(40,10,70,0.55), rgba(2,1,8,0.92) 70%);
+    backdrop-filter: blur(3px);
+  }
+  .card{
+    position: relative;
+    overflow: hidden;
+    width:min(88vw, 380px);
+    background: linear-gradient(165deg, rgba(28,16,58,0.72), rgba(8,4,20,0.82));
+    border: 1px solid rgba(0,246,255,0.32);
+    border-top-color: rgba(255,255,255,0.4);
+    border-radius: 24px;
+    padding: 26px 20px;
+    text-align:center;
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(138,46,255,0.3), 0 0 80px rgba(0,246,255,0.08), inset 0 1px 0 rgba(255,255,255,0.14);
+  }
+  .card::before{
+    content:'';
+    position:absolute; inset:0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.12), transparent 40%);
+    pointer-events:none;
+  }
+  .title{
+    font-family:'Cairo',sans-serif; font-weight:900; font-size: 24px; color:#fff;
+    text-shadow: 0 0 12px var(--neon-cyan), 0 0 30px var(--neon-violet);
+    margin: 0 0 6px 0;
+  }
+  .subtitle{ font-size:12.5px; color:#b9b3ff; opacity:.85; margin-bottom: 14px; line-height:1.7; }
+  .subtitle b{ color:#fff; }
+
+  .btn{
+    display:inline-block; width:100%;
+    font-family:'Cairo',sans-serif; font-weight:800; font-size:16px;
+    color:#04121a;
+    background: linear-gradient(135deg, var(--neon-cyan), #7be9ff);
+    border:none; border-radius:14px; padding:12px 10px;
+    cursor:pointer;
+    box-shadow: 0 0 24px rgba(0,246,255,0.55);
+    transition: transform .12s ease;
+  }
+  .btn:active{ transform: scale(.96); }
+  .btn.secondary{
+    margin-top:8px;
+    background: linear-gradient(135deg, var(--neon-magenta), #ff9ad1);
+    box-shadow: 0 0 24px rgba(255,47,176,0.5);
+  }
+
+  .go-score{ font-family:'Cairo',sans-serif; font-size:40px; font-weight:900; color:#fff; text-shadow:0 0 20px var(--neon-magenta); margin: 2px 0; }
+  .go-best{ font-size:13px; color:#ffe14d; margin-bottom: 14px; }
+  .go-best.new{ color:#39ff88; }
+
+  #startOverlay{ z-index: 25; }
+  #gameoverOverlay{ z-index: 21; display:none; }
+
+  .dev-credit{
+    margin-top:12px; font-size:11px; color:#8fe9ff; opacity:.55; letter-spacing:.5px;
+  }
+
+  .pause-btn{
+    width:38px; height:38px; border-radius:12px; flex-shrink:0;
+    background: linear-gradient(180deg, rgba(30,20,60,0.6), rgba(10,6,24,0.6));
+    border:1px solid rgba(0,246,255,0.28); border-top-color: rgba(255,255,255,0.3);
+    color:#fff; font-size:16px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35), 0 0 18px rgba(0,246,255,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
+    cursor:pointer;
+    pointer-events:auto;
+  }
+  .pause-btn:active{ transform: scale(.92); }
+
+  #pauseOverlay{ z-index:22; display:none; }
+
+  .leaderboard{
+    margin: 2px 0 14px; text-align:center;
+    background: rgba(0,0,0,0.2); border:1px solid rgba(0,246,255,0.18);
+    border-radius:14px; padding: 8px;
+  }
+  .leaderboard-title{ font-size:11px; color:#8fe9ff; opacity:.85; letter-spacing:.5px; margin-bottom:4px; }
+  .leaderboard-row{
+    display:flex; justify-content:space-between; padding: 3px 10px;
+    font-family:'Cairo',sans-serif; font-size:13px; color:#e8e6ff;
+  }
+  .leaderboard-row.me{ color:#39ff88; font-weight:800; }
+  .leaderboard-row .rank{ color:#8fe9ff; opacity:.8; }
+
+  .selection-section { margin-bottom: 12px; text-align: right; }
+  [dir="ltr"] .selection-section { text-align: left; }
+  .selection-label { font-size: 11.5px; color: #8fe9ff; margin-bottom: 5px; font-weight: 600; }
+  .row-options { display: flex; gap: 8px; }
+  .opt-btn {
+    flex: 1; font-size: 13px; padding: 10px 4px; border-radius: 12px; border: 1px solid rgba(0,246,255,0.3);
+    background: rgba(30,20,60,0.6); color: #fff; font-family: 'Cairo', sans-serif; font-weight: 700; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .opt-btn.active {
+    background: linear-gradient(135deg, var(--neon-cyan), #7be9ff);
+    color: #04121a;
+    box-shadow: 0 0 16px rgba(0,246,255,0.4);
+    border-color: #fff;
+  }
+
+  .mode-badge{
+    flex-shrink:0; padding:9px 12px; border-radius:12px;
+    background: linear-gradient(180deg, rgba(30,20,60,0.6), rgba(10,6,24,0.6));
+    border:1px solid rgba(0,246,255,0.28); border-top-color: rgba(255,255,255,0.3);
+    color:#fff; font-size:11px; font-family:'Cairo',sans-serif; font-weight:800;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35), 0 0 18px rgba(0,246,255,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
+    white-space:nowrap;
+    pointer-events:auto;
+  }
+
+  .switch-mode-link{
+    display:inline-block; margin-top:8px; font-size:12px; color:#8fe9ff; opacity:.75;
+    text-decoration:underline; cursor:pointer; background:none; border:none; font-family:'Tajawal',sans-serif;
+  }
+
+  .social-link{
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    margin-top:10px; font-size:12px; color:#e8b6ff; opacity:.85;
+    text-decoration:none; font-family:'Tajawal',sans-serif;
+    padding:8px 12px; border-radius:12px;
+    background: linear-gradient(135deg, rgba(255,47,176,0.14), rgba(138,46,255,0.14));
+    border:1px solid rgba(255,47,176,0.28);
+  }
+  .social-link:active{ transform: scale(.97); }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="gl"></canvas>
+
+  <div class="flash" id="flash"></div>
+
+  <div class="overlay" id="pauseOverlay">
+    <div class="card">
+      <div class="title" data-i18n="pauseTitle">إيقاف مؤقت</div>
+      <div class="subtitle" data-i18n="pauseSub">خذ استراحة — اللعبة متوقفة حالياً.</div>
+      <button class="btn" id="resumeBtn" data-i18n="resumeBtn">استئناف اللعب</button>
+      <a class="social-link" href="https://www.instagram.com/dh7hasan" target="_blank" rel="noopener">📷 تابعنا على انستغرام</a>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div class="topbar">
+      <button class="pause-btn" id="pauseBtn" aria-label="Pause">⏸</button>
+      <div class="stats-group">
+        <div class="stat">
+          <div class="label" data-i18n="scoreLbl">النقاط</div>
+          <div class="value" id="scoreVal">0</div>
+        </div>
+        <div class="stat">
+          <div class="label" data-i18n="bestLbl">أفضل نتيجة</div>
+          <div class="value" id="bestVal">0</div>
+        </div>
+        <div class="stat">
+          <div class="label" data-i18n="levelLbl">المستوى</div>
+          <div class="value" id="levelVal">1</div>
+        </div>
+      </div>
+      <div class="mode-badge" id="modeBadge">عادي</div>
+    </div>
+
+    <div class="prompt-wrap">
+      <div class="prompt-label" id="promptInstruction">اذهب حسب <b>الكلمة المكتوبة</b> (تجاهل لون الحبر):</div>
+      <div class="prompt-word" id="promptWord">أحمر</div>
+    </div>
+
+    <div class="lives" id="lives">
+      <div class="life-dot"></div>
+    </div>
+
+    <div class="hint" id="hintText">حرّك إصبعك يميناً ويساراً في أي مكان على الشاشة — الكرة تتبعه مباشرة</div>
+  </div>
+
+  <!-- شاشة البداية الاحترافية مع اختيار اللغة والصعوبة -->
+  <div class="overlay" id="startOverlay">
+    <div class="card">
+      <div class="title" data-i18n="gameTitle">ركض الألوان المستقبلية</div>
+      <div class="subtitle" data-i18n="gameDesc">
+        تجري الكرة تلقائياً داخل نفق نيون لا نهائي.<br>
+        وجّه الكرة نحو البوابة التي تطابق <b>معنى الكلمة المكتوبة</b>، لا لون الحبر.
+      </div>
+      
+      <!-- اختيار اللغة -->
+      <div class="selection-section">
+        <div class="selection-label" data-i18n="langLabel">لغة العرض (Language):</div>
+        <div class="row-options">
+          <button class="opt-btn active" data-lang="ar">العربية</button>
+          <button class="opt-btn" data-lang="en">English</button>
+        </div>
+      </div>
+
+      <!-- اختيار الصعوبة -->
+      <div class="selection-section">
+        <div class="selection-label" data-i18n="diffLabel">مستوى الصعوبة (Difficulty):</div>
+        <div class="row-options">
+          <button class="opt-btn active" data-mode="normal" data-i18n="normalMode">عادي</button>
+          <button class="opt-btn" data-mode="hard" data-i18n="hardMode">صعب</button>
+        </div>
+      </div>
+
+      <button class="btn" id="startPlayBtn" data-i18n="startBtn">ابدأ اللعب</button>
+      <a class="social-link" href="https://www.instagram.com/dh7hasan" target="_blank" rel="noopener">📷 تابعنا على انستغرام</a>
+      <div class="dev-credit">تطوير: hasandhdo</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameoverOverlay">
+    <div class="card">
+      <div class="title" data-i18n="gameOverTitle">انتهت الجولة</div>
+      <div class="go-score" id="finalScore">0</div>
+      <div class="go-best" id="bestNote">أفضل نتيجة: 0</div>
+      <div class="leaderboard">
+        <div class="leaderboard-title" data-i18n="leaderboardTitle">أفضل ٥ نتائج</div>
+        <div id="leaderboardList"></div>
+      </div>
+      <button class="btn secondary" id="retryBtn" data-i18n="retryBtn">حاول مرة أخرى</button>
+      <button class="switch-mode-link" id="switchModeBtn" data-i18n="changeSettings">تغيير الإعدادات واللغة</button>
+      <a class="social-link" href="https://www.instagram.com/dh7hasan" target="_blank" rel="noopener">📷 تابعنا على انستغرام</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== الترجمات (Languages) ===================== */
+  let currentLang = 'ar';
+  const LANGS = {
+    ar: {
+      pageTitle: "ركض الألوان المستقبلية",
+      gameTitle: "ركض الألوان المستقبلية",
+      gameDesc: "تجري الكرة تلقائياً داخل نفق نيون لا نهائي.<br>وجّه الكرة نحو البوابة التي تطابق <b>معنى الكلمة المكتوبة</b>، لا لون الحبر.",
+      langLabel: "لغة العرض (Language):",
+      diffLabel: "مستوى الصعوبة (Difficulty):",
+      normalMode: "عادي",
+      hardMode: "صعب",
+      startBtn: "ابدأ اللعب",
+      scoreLbl: "النقاط",
+      bestLbl: "أفضل نتيجة",
+      levelLbl: "المستوى",
+      promptInstruction: "اذهب حسب <b>الكلمة المكتوبة</b> (تجاهل لون الحبر):",
+      hintText: "حرّك إصبعك يميناً ويساراً في أي مكان على الشاشة — الكرة تتبعه مباشرة",
+      pauseTitle: "إيقاف مؤقت",
+      pauseSub: "خذ استراحة — اللعبة متوقفة حالياً.",
+      resumeBtn: "استئناف اللعب",
+      gameOverTitle: "انتهت الجولة",
+      leaderboardTitle: "أفضل ٥ نتائج",
+      retryBtn: "حاول مرة أخرى",
+      changeSettings: "تغيير الإعدادات واللغة",
+      noScores: "لا نتائج بعد",
+      newRecord: "رقم قياسي جديد! أفضل نتيجة: "
+    },
+    en: {
+      pageTitle: "Neon Color Runner",
+      gameTitle: "Neon Color Runner",
+      gameDesc: "The ball runs automatically in an endless neon tunnel.<br>Guide the ball to the gate matching the <b>written word</b>, not the ink color.",
+      langLabel: "Display Language:",
+      diffLabel: "Difficulty Level:",
+      normalMode: "Normal",
+      hardMode: "Hard",
+      startBtn: "Start Game",
+      scoreLbl: "Score",
+      bestLbl: "Best",
+      levelLbl: "Level",
+      promptInstruction: "Go by the <b>written word</b> (ignore ink color):",
+      hintText: "Swipe left or right anywhere on screen — the ball follows instantly",
+      pauseTitle: "Game Paused",
+      pauseSub: "Take a break — game is currently paused.",
+      resumeBtn: "Resume Game",
+      gameOverTitle: "Game Over",
+      leaderboardTitle: "Top 5 Scores",
+      retryBtn: "Try Again",
+      changeSettings: "Change Settings & Language",
+      noScores: "No scores yet",
+      newRecord: "New Record! Best score: "
+    }
+  };
+
+  const COLORS_DATA = {
+    ar: {
+      red:    { hex: 0xff1626, css: '#ff1626', word: 'أحمر' },
+      blue:   { hex: 0x1462ff, css: '#1462ff', word: 'أزرق' },
+      green:  { hex: 0x00e676, css: '#00e676', word: 'أخضر' },
+      yellow: { hex: 0xffd500, css: '#ffd500', word: 'أصفر' },
+      purple: { hex: 0x9b30ff, css: '#9b30ff', word: 'بنفسجي' }
+    },
+    en: {
+      red:    { hex: 0xff1626, css: '#ff1626', word: 'RED' },
+      blue:   { hex: 0x1462ff, css: '#1462ff', word: 'BLUE' },
+      green:  { hex: 0x00e676, css: '#00e676', word: 'GREEN' },
+      yellow: { hex: 0xffd500, css: '#ffd500', word: 'YELLOW' },
+      purple: { hex: 0x9b30ff, css: '#9b30ff', word: 'PURPLE' }
+    }
+  };
+
+  function applyLanguage(lang){
+    currentLang = lang;
+    const t = LANGS[lang];
+    document.getElementById('htmlRoot').setAttribute('lang', lang);
+    document.getElementById('htmlRoot').setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    document.getElementById('pageTitle').textContent = t.pageTitle;
+
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if(t[key]) el.innerHTML = t[key];
+    });
+
+    modeBadge.textContent = (currentMode === 'normal') ? t.normalMode : t.hardMode;
+  }
+
+  /* ===================== CONFIG ===================== */
+  const LANE_X = [-2.4, 0, 2.4];
+  const PLAYER_Z = 6;
+  const SPAWN_Z = -46;
+  const RESOLVE_Z = 4.2;
+  const STORAGE_KEY = 'neon-color-runner-best';
+
+  const DIFFICULTY = {
+    normal: { baseSpeed: 14, speedPerLevel: 2.6, speedCap: 48, levelUpEvery: 3, baseSpawnGap: 1.0, spawnGapPerLevel: 0.13, minSpawnGap: 0.28, firstSpawn: 0.35 },
+    hard:   { baseSpeed: 30, speedPerLevel: 3.2, speedCap: 55, levelUpEvery: 3, baseSpawnGap: 0.55, spawnGapPerLevel: 0.13, minSpawnGap: 0.24, firstSpawn: 0.15 }
+  };
+  let currentMode = 'normal';
+
+  const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                     Math.min(window.innerWidth, window.innerHeight) < 480;
+  const MAX_PIXEL_RATIO = IS_MOBILE ? 1.5 : 2;
+
+  /* ===================== STATE ===================== */
+  let scene, camera, renderer, clock;
+  let playerGroup, playerLight;
+  let floorMat1, floorMesh1;
+  let wallLMat, wallRMat;
+
+  let running = false;
+  let gameOver = true;
+  let laneVisualX = LANE_X[1];
+  let playerVelX = 0;
+
+  let score = 0;
+  let best = 0;
+  const START_LIVES = 1;
+  let lives = START_LIVES;
+  let level = 1;
+  let speed = 14;
+  let bobT = 0;
+  let isPaused = false;
+  let manualPaused = false;
+
+  let activeGate = null;
+  let nextSpawnDelay = 0.4;
+  let spawnTimer = 0;
+
+  /* ===================== DOM ===================== */
+  const scoreVal = document.getElementById('scoreVal');
+  const bestVal = document.getElementById('bestVal');
+  const levelVal = document.getElementById('levelVal');
+  const promptWord = document.getElementById('promptWord');
+  const livesWrap = document.getElementById('lives');
+  const flashEl = document.getElementById('flash');
+  const startOverlay = document.getElementById('startOverlay');
+  const gameoverOverlay = document.getElementById('gameoverOverlay');
+  const finalScoreEl = document.getElementById('finalScore');
+  const bestNoteEl = document.getElementById('bestNote');
+  const startPlayBtn = document.getElementById('startPlayBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const leaderboardList = document.getElementById('leaderboardList');
+  const modeBadge = document.getElementById('modeBadge');
+  const switchModeBtn = document.getElementById('switchModeBtn');
+
+  /* ===================== STORAGE ===================== */
+  async function loadBest(){
+    try{
+      if(window.storage && window.storage.get){
+        const res = await window.storage.get(STORAGE_KEY, false);
+        if(res && res.value) best = parseInt(res.value, 10) || 0;
+      } else {
+        const val = localStorage.getItem(STORAGE_KEY);
+        best = val ? parseInt(val, 10) || 0 : 0;
+      }
+    }catch(e){ best = 0; }
+    bestVal.textContent = best;
+  }
+  async function saveBest(){
+    try{
+      if(window.storage && window.storage.set){
+        await window.storage.set(STORAGE_KEY, String(best), false);
+      } else {
+        localStorage.setItem(STORAGE_KEY, String(best));
+      }
+    }catch(e){}
+  }
+
+  const LEADERBOARD_KEY = 'neon-color-runner-leaderboard';
+  const LEADERBOARD_SIZE = 5;
+
+  async function loadLeaderboard(){
+    try{
+      if(window.storage && window.storage.get){
+        const res = await window.storage.get(LEADERBOARD_KEY, false);
+        if(res && res.value){
+          const parsed = JSON.parse(res.value);
+          if(Array.isArray(parsed)) return parsed;
+        }
+      } else {
+        const val = localStorage.getItem(LEADERBOARD_KEY);
+        if(val) return JSON.parse(val);
+      }
+    }catch(e){}
+    return [];
+  }
+
+  async function recordScore(newScore){
+    let list = await loadLeaderboard();
+    list.push(newScore);
+    list.sort((a,b)=>b-a);
+    list = list.slice(0, LEADERBOARD_SIZE);
+    const placedAt = list.indexOf(newScore);
+    try{
+      if(window.storage && window.storage.set){
+        await window.storage.set(LEADERBOARD_KEY, JSON.stringify(list), false);
+      } else {
+        localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
+      }
+    }catch(e){}
+    return { list, placedAt };
+  }
+
+  function renderLeaderboard(list, highlightIndex){
+    const t = LANGS[currentLang];
+    if(!list.length){
+      leaderboardList.innerHTML = `<div class="leaderboard-row"><span>—</span><span>${t.noScores}</span></div>`;
+      return;
+    }
+    leaderboardList.innerHTML = list.map((s,i)=>{
+      const mine = i === highlightIndex ? ' me' : '';
+      return `<div class="leaderboard-row${mine}"><span class="rank">#${i+1}</span><span>${s}</span></div>`;
+    }).join('');
+  }
+
+  /* ===================== THREE SETUP ===================== */
+  function initThree(){
+    const canvas = document.getElementById('gl');
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x05020c, 0.028);
+    scene.background = new THREE.Color(0x05020c);
+
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 200);
+    camera.position.set(0, 3.1, PLAYER_Z + 5.2);
+    camera.lookAt(0, 1.2, -10);
+
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: !IS_MOBILE,
+      alpha:false,
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    scene.add(new THREE.AmbientLight(0x8866ff, 0.5));
+    const dl = new THREE.DirectionalLight(0x00f6ff, 0.4);
+    dl.position.set(0, 10, 10);
+    scene.add(dl);
+
+    buildFloor();
+    buildWalls();
+    buildPlayer();
+
+    window.addEventListener('resize', onResize);
+    document.addEventListener('visibilitychange', ()=>{ isPaused = document.hidden; });
+  }
+
+  function makeGridTexture(){
+    const size = 512;
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0a0616';
+    ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle = 'rgba(0,246,255,0.55)';
+    ctx.lineWidth = 3;
+    const step = size/8;
+    for(let i=0;i<=8;i++){
+      ctx.beginPath(); ctx.moveTo(i*step,0); ctx.lineTo(i*step,size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,i*step); ctx.lineTo(size,i*step); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,47,176,0.35)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<=32;i++){
+      const p = i*(size/32);
+      ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,size); ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(6, 40);
+    return tex;
+  }
+
+  function buildFloor(){
+    const tex = makeGridTexture();
+    const geo = new THREE.PlaneGeometry(9, 400);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:false });
+    floorMat1 = mat;
+    floorMesh1 = new THREE.Mesh(geo, mat);
+    floorMesh1.rotation.x = -Math.PI/2;
+    floorMesh1.position.set(0, 0, -100);
+    scene.add(floorMesh1);
+  }
+
+  function buildWalls(){
+    function stripeTexture(color){
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#08041a';
+      ctx.fillRect(0,0,64,512);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      for(let i=0;i<8;i++){
+        ctx.beginPath();
+        ctx.moveTo(0, i*64+10);
+        ctx.lineTo(64, i*64+40);
+        ctx.stroke();
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1, 40);
+      return tex;
+    }
+    const texL = stripeTexture('#00f6ff');
+    const texR = stripeTexture('#ff2fb0');
+    wallLMat = new THREE.MeshBasicMaterial({ map: texL });
+    wallRMat = new THREE.MeshBasicMaterial({ map: texR });
+
+    const geo = new THREE.PlaneGeometry(6, 400);
+    const wallL = new THREE.Mesh(geo, wallLMat);
+    wallL.position.set(-4.6, 3, -100);
+    wallL.rotation.y = Math.PI/2;
+    scene.add(wallL);
+
+    const wallR = new THREE.Mesh(geo, wallRMat);
+    wallR.position.set(4.6, 3, -100);
+    wallR.rotation.y = -Math.PI/2;
+    scene.add(wallR);
+  }
+
+  function buildPlayer(){
+    playerGroup = new THREE.Group();
+
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, IS_MOBILE ? 16 : 24, IS_MOBILE ? 16 : 24),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    playerGroup.add(core);
+
+    const haloColors = IS_MOBILE ? [0x00f6ff, 0xff2fb0] : [0x00f6ff, 0xff2fb0, 0x8a2eff];
+    haloColors.forEach((c, i) => {
+      const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42 + (i+1)*0.14, IS_MOBILE ? 10 : 16, IS_MOBILE ? 10 : 16),
+        new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:0.16 - i*0.03, depthWrite:false })
+      );
+      playerGroup.add(halo);
+    });
+
+    playerLight = new THREE.PointLight(0x00f6ff, 2.2, 8);
+    playerLight.position.set(0,0,0);
+    playerGroup.add(playerLight);
+
+    playerGroup.position.set(LANE_X[1], 0.55, PLAYER_Z);
+    scene.add(playerGroup);
+  }
+
+  function onResize(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /* ===================== GATES ===================== */
+  function pickPromptAndColors(){
+    const colorsDict = COLORS_DATA[currentLang];
+    const colorKeys = Object.keys(colorsDict);
+    const meaningKey = colorKeys[Math.floor(Math.random()*colorKeys.length)];
+    let inkKey;
+    do { inkKey = colorKeys[Math.floor(Math.random()*colorKeys.length)]; } while(inkKey === meaningKey);
+
+    const pool = colorKeys.filter(k => k !== meaningKey);
+    shuffleArr(pool);
+    const others = pool.slice(0,2);
+    const laneColorKeys = [null, null, null];
+    const correctLane = Math.floor(Math.random()*3);
+    laneColorKeys[correctLane] = meaningKey;
+    let oi = 0;
+    for(let i=0;i<3;i++){
+      if(i === correctLane) continue;
+      laneColorKeys[i] = others[oi++];
+    }
+    return { meaningKey, inkKey, laneColorKeys, correctLane };
+  }
+
+  function shuffleArr(a){
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+  }
+
+  function makeGatePanel(colorHex){
+    const group = new THREE.Group();
+    const frameMat = new THREE.MeshBasicMaterial({ color: colorHex });
+    const barGeoH = new THREE.BoxGeometry(1.9, 0.14, 0.14);
+    const barGeoV = new THREE.BoxGeometry(0.14, 2.2, 0.14);
+
+    const top = new THREE.Mesh(barGeoH, frameMat);
+    top.position.set(0, 2.15, 0);
+    group.add(top);
+
+    const left = new THREE.Mesh(barGeoV, frameMat);
+    left.position.set(-0.95, 1.1, 0);
+    group.add(left);
+
+    const right = new THREE.Mesh(barGeoV, frameMat);
+    right.position.set(0.95, 1.1, 0);
+    group.add(right);
+
+    const glowPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.7, 2.0),
+      new THREE.MeshBasicMaterial({ color: colorHex, transparent:true, opacity:0.08, depthWrite:false })
+    );
+    glowPanel.position.set(0, 1.1, 0);
+    group.add(glowPanel);
+
+    const pl = new THREE.PointLight(colorHex, 1.4, 6);
+    pl.position.set(0, 1.2, 0.3);
+    group.add(pl);
+
+    return group;
+  }
+
+  function spawnGate(){
+    const info = pickPromptAndColors();
+    const group = new THREE.Group();
+    const colorsDict = COLORS_DATA[currentLang];
+    info.laneColorKeys.forEach((key, i) => {
+      const hex = colorsDict[key].hex;
+      const panel = makeGatePanel(hex);
+      panel.position.x = LANE_X[i];
+      group.add(panel);
+    });
+    group.position.z = SPAWN_Z;
+    scene.add(group);
+
+    activeGate = {
+      group,
+      correctLane: info.correctLane,
+      resolved: false
+    };
+
+    promptWord.textContent = colorsDict[info.meaningKey].word;
+    promptWord.style.color = colorsDict[info.inkKey].css;
+    promptWord.classList.remove('pulse'); void promptWord.offsetWidth; promptWord.classList.add('pulse');
+  }
+
+  function clearActiveGate(){
+    if(activeGate){
+      scene.remove(activeGate.group);
+      activeGate.group.traverse(o=>{
+        if(o.geometry) o.geometry.dispose();
+        if(o.material) o.material.dispose();
+      });
+      activeGate = null;
+    }
+  }
+
+  function updateLivesUI(){
+    const dots = livesWrap.querySelectorAll('.life-dot');
+    dots.forEach((d,i)=>{ d.classList.toggle('off', i >= lives); });
+  }
+
+  function flash(good){
+    flashEl.classList.remove('show-good','show-bad');
+    void flashEl.offsetWidth;
+    flashEl.classList.add(good ? 'show-good' : 'show-bad');
+    setTimeout(()=>flashEl.classList.remove('show-good','show-bad'), 220);
+  }
+
+  function resetGame(){
+    const cfg = DIFFICULTY[currentMode];
+    score = 0; lives = START_LIVES; level = 1; speed = cfg.baseSpeed;
+    manualPaused = false;
+    pauseOverlay.style.display = 'none';
+    pauseBtn.textContent = '⏸';
+    playerTargetX = LANE_X[1]; laneVisualX = LANE_X[1]; playerVelX = 0;
+    playerGroup.position.x = LANE_X[1];
+    scoreVal.textContent = '0';
+    levelVal.textContent = '1';
+    updateLivesUI();
+    clearActiveGate();
+    spawnTimer = cfg.firstSpawn;
+    gameOver = false;
+    running = true;
+  }
+
+  function onSuccess(){
+    score += 1;
+    scoreVal.textContent = score;
+    const cfg = DIFFICULTY[currentMode];
+    const newLevel = Math.floor(score/cfg.levelUpEvery) + 1;
+    if(newLevel !== level){
+      level = newLevel;
+      levelVal.textContent = level;
+    }
+    speed = Math.min(cfg.baseSpeed + level*cfg.speedPerLevel, cfg.speedCap);
+    flash(true);
+  }
+
+  function onFail(){
+    lives -= 1;
+    updateLivesUI();
+    flash(false);
+    if(lives <= 0){
+      endGame();
+    }
+  }
+
+  async function endGame(){
+    running = false;
+    gameOver = true;
+    clearActiveGate();
+    finalScoreEl.textContent = score;
+    const t = LANGS[currentLang];
+    if(score > best){
+      best = score;
+      bestVal.textContent = best;
+      bestNoteEl.textContent = t.newRecord + best;
+      bestNoteEl.classList.add('new');
+      saveBest();
+    } else {
+      bestNoteEl.textContent = (currentLang === 'ar' ? 'أفضل نتيجة: ' : 'Best score: ') + best;
+      bestNoteEl.classList.remove('new');
+    }
+    gameoverOverlay.style.display = 'flex';
+
+    const { list, placedAt } = await recordScore(score);
+    renderLeaderboard(list, placedAt);
+  }
+
+  const LANE_MIN = LANE_X[0], LANE_MAX = LANE_X[2];
+  let playerTargetX = LANE_X[1];
+  let isDragging = false;
+
+  function canPlay(){ return running && !manualPaused; }
+
+  function nearestLaneIndex(x){
+    let best = 0, bestDist = Infinity;
+    for(let i=0;i<LANE_X.length;i++){
+      const d = Math.abs(LANE_X[i]-x);
+      if(d < bestDist){ bestDist = d; best = i; }
+    }
+    return best;
+  }
+
+  function screenXToWorld(clientX){
+    const t = Math.min(1, Math.max(0, clientX / window.innerWidth));
+    return LANE_MIN + t * (LANE_MAX - LANE_MIN);
+  }
+
+  function moveLaneStep(dir){
+    if(!canPlay()) return;
+    const cur = nearestLaneIndex(playerTargetX);
+    const next = Math.min(2, Math.max(0, cur + dir));
+    playerTargetX = LANE_X[next];
+    isDragging = false;
+  }
+
+  function onPointerDown(e){
+    if(!canPlay()) return;
+    isDragging = true;
+    const t = e.touches ? e.touches[0] : e;
+    playerTargetX = screenXToWorld(t.clientX);
+  }
+  function onPointerMove(e){
+    if(!isDragging || !canPlay()) return;
+    const t = e.touches ? e.touches[0] : e;
+    playerTargetX = screenXToWorld(t.clientX);
+  }
+  function onPointerUp(){
+    isDragging = false;
+  }
+
+  function onKeyDown(e){
+    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') moveLaneStep(-1);
+    if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') moveLaneStep(1);
+  }
+
+  function togglePause(){
+    if(!running) return;
+    manualPaused = !manualPaused;
+    pauseOverlay.style.display = manualPaused ? 'flex' : 'none';
+    pauseBtn.textContent = manualPaused ? '▶' : '⏸';
+    if(manualPaused) isDragging = false;
+  }
+
+  function initInput(){
+    pauseBtn.addEventListener('click', togglePause);
+    resumeBtn.addEventListener('click', togglePause);
+    const stage = document.getElementById('stage');
+    stage.addEventListener('touchstart', onPointerDown, {passive:true});
+    stage.addEventListener('touchmove', onPointerMove, {passive:true});
+    stage.addEventListener('touchend', onPointerUp, {passive:true});
+    stage.addEventListener('touchcancel', onPointerUp, {passive:true});
+    stage.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('keydown', onKeyDown);
+  }
+
+  const STEER_ACCEL = 55;
+  const STEER_DAMPING = 9;
+
+  function animate(){
+    requestAnimationFrame(animate);
+
+    if(isPaused){
+      clock.getDelta();
+      return;
+    }
+
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const active = canPlay();
+
+    const scrollRate = active ? speed*0.045 : (running ? 0 : 4);
+    if(floorMat1 && floorMat1.map){
+      floorMat1.map.offset.y -= dt * scrollRate;
+    }
+    if(wallLMat && wallLMat.map) wallLMat.map.offset.y -= dt * scrollRate;
+    if(wallRMat && wallRMat.map) wallRMat.map.offset.y -= dt * scrollRate;
+
+    if(active){
+      if(isDragging){
+        const prevX = laneVisualX;
+        laneVisualX += (playerTargetX - laneVisualX) * Math.min(1, dt*20);
+        playerVelX = (laneVisualX - prevX) / Math.max(dt, 0.0001);
+      } else {
+        const dx = playerTargetX - laneVisualX;
+        playerVelX += dx * STEER_ACCEL * dt;
+        playerVelX *= Math.max(0, 1 - STEER_DAMPING * dt);
+        laneVisualX += playerVelX * dt;
+      }
+      playerGroup.position.x = laneVisualX;
+
+      bobT += dt * 8;
+      playerGroup.position.y = 0.55 + Math.sin(bobT) * 0.12;
+
+      const lean = Math.max(-0.5, Math.min(0.5, -playerVelX * 0.05));
+      playerGroup.rotation.z = lean;
+      const squash = Math.max(-0.16, Math.min(0.16, Math.abs(playerVelX) * 0.018));
+      playerGroup.scale.set(1 - squash*0.5, 1 + squash*0.5, 1 - squash*0.5);
+
+      playerGroup.rotation.x += dt * (3 + Math.abs(playerVelX) * 0.15);
+
+      if(!activeGate){
+        spawnTimer -= dt;
+        if(spawnTimer <= 0){
+          spawnGate();
+        }
+      } else {
+        activeGate.group.position.z += speed * dt;
+        if(!activeGate.resolved && activeGate.group.position.z >= RESOLVE_Z){
+          activeGate.resolved = true;
+          const playerLane = nearestLaneIndex(playerGroup.position.x);
+          if(playerLane === activeGate.correctLane) onSuccess();
+          else onFail();
+        }
+        if(activeGate && activeGate.group.position.z > PLAYER_Z + 3){
+          clearActiveGate();
+          const cfg = DIFFICULTY[currentMode];
+          nextSpawnDelay = Math.max(cfg.baseSpawnGap - level*cfg.spawnGapPerLevel, cfg.minSpawnGap);
+          spawnTimer = nextSpawnDelay;
+        }
+      }
+    } else if(!running){
+      bobT += dt * 2;
+      playerGroup.position.y = 0.55 + Math.sin(bobT) * 0.12;
+      playerGroup.rotation.x += dt * 3;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  async function boot(){
+    initThree();
+    initInput();
+    clock = new THREE.Clock();
+    await loadBest();
+    animate();
+  }
+
+  // التفاعل مع خيارات اللغة والصعوبة في شاشة البداية
+  document.querySelectorAll('[data-lang]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-lang]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyLanguage(btn.dataset.lang);
+    });
+  });
+
+  document.querySelectorAll('[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentMode = btn.dataset.mode;
+      modeBadge.textContent = (currentMode === 'normal') ? LANGS[currentLang].normalMode : LANGS[currentLang].hardMode;
+    });
+  });
+
+  startPlayBtn.addEventListener('click', () => {
+    startOverlay.style.display = 'none';
+    resetGame();
+  });
+
+  retryBtn.addEventListener('click', ()=>{
+    gameoverOverlay.style.display = 'none';
+    resetGame();
+  });
+  switchModeBtn.addEventListener('click', ()=>{
+    gameoverOverlay.style.display = 'none';
+    startOverlay.style.display = 'flex';
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
