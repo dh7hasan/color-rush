@@ -215,6 +215,7 @@
   .leaderboard-row.me{ color:#39ff88; font-weight:800; }
   .leaderboard-row .rank{ color:#8fe9ff; opacity:.8; }
 </style>
+<script src="https://pl30713394.effectivecpmnetwork.com/95/9b/b3/959bb304b30e731b7a59abc714eee022.js"></script>
 </head>
 <body>
 
@@ -391,8 +392,6 @@
     return [];
   }
 
-  // Adds the just-finished run's score into the table, keeps only the top scores, and saves it.
-  // Returns the updated list plus the index the new score landed at (for highlighting), or -1 if it didn't place.
   async function recordScore(newScore){
     let list = await loadLeaderboard();
     list.push(newScore);
@@ -427,7 +426,7 @@
 
     renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !IS_MOBILE,      // skip MSAA on phones — biggest single perf win
+      antialias: !IS_MOBILE,
       alpha:false,
       powerPreference: 'high-performance'
     });
@@ -532,7 +531,6 @@
     );
     playerGroup.add(core);
 
-    // fewer glow layers on phones — each transparent mesh costs overdraw
     const haloColors = IS_MOBILE ? [0x00f6ff, 0xff2fb0] : [0x00f6ff, 0xff2fb0, 0x8a2eff];
     haloColors.forEach((c, i) => {
       const halo = new THREE.Mesh(
@@ -558,13 +556,10 @@
 
   /* ===================== GATES ===================== */
   function pickPromptAndColors(){
-    // word meaning
     const meaningKey = COLOR_KEYS[Math.floor(Math.random()*COLOR_KEYS.length)];
-    // ink color, must differ from meaning
     let inkKey;
     do { inkKey = COLOR_KEYS[Math.floor(Math.random()*COLOR_KEYS.length)]; } while(inkKey === meaningKey);
 
-    // 3 lane colors: one must be meaningKey (the correct answer), other two distinct, none duplicated
     const pool = COLOR_KEYS.filter(k => k !== meaningKey);
     shuffleArr(pool);
     const others = pool.slice(0,2);
@@ -636,7 +631,6 @@
       resolved: false
     };
 
-    // update prompt UI
     promptWord.textContent = COLORS[info.meaningKey].word;
     promptWord.style.color = COLORS[info.inkKey].css;
     promptWord.classList.remove('pulse'); void promptWord.offsetWidth; promptWord.classList.add('pulse');
@@ -653,7 +647,10 @@
     }
   }
 
-  /* ===================== GAME FLOW ===================== */
+  function showInterstitialAd(){
+    // Adsterra Social Bar script is already loaded in <head>.
+  }
+
   function updateLivesUI(){
     const dots = livesWrap.querySelectorAll('.life-dot');
     dots.forEach((d,i)=>{ d.classList.toggle('off', i >= lives); });
@@ -685,13 +682,11 @@
   function onSuccess(){
     score += 1;
     scoreVal.textContent = score;
-    // level up every 3 points instead of 5 — noticeably faster ramp
     const newLevel = Math.floor(score/3) + 1;
     if(newLevel !== level){
       level = newLevel;
       levelVal.textContent = level;
     }
-    // steeper speed growth per level, higher cap
     speed = Math.min(14 + level*2.6, 48);
     flash(true);
   }
@@ -709,6 +704,7 @@
     running = false;
     gameOver = true;
     clearActiveGate();
+    showInterstitialAd();
     finalScoreEl.textContent = score;
     if(score > best){
       best = score;
@@ -726,7 +722,6 @@
     renderLeaderboard(list, placedAt);
   }
 
-  /* ===================== INPUT (free continuous drag) ===================== */
   const LANE_MIN = LANE_X[0], LANE_MAX = LANE_X[2];
   let playerTargetX = LANE_X[1];
   let isDragging = false;
@@ -776,7 +771,7 @@
   }
 
   function togglePause(){
-    if(!running) return; // nothing to pause on the start/game-over screens
+    if(!running) return;
     manualPaused = !manualPaused;
     pauseOverlay.style.display = manualPaused ? 'flex' : 'none';
     pauseBtn.textContent = manualPaused ? '▶' : '⏸';
@@ -797,26 +792,20 @@
     window.addEventListener('keydown', onKeyDown);
   }
 
-  /* ===================== LOOP ===================== */
-  const STEER_ACCEL = 55;   // how eagerly the ball chases the target lane (spring-like)
-  const STEER_DAMPING = 9;  // velocity decay, prevents endless oscillation
+  const STEER_ACCEL = 55;
+  const STEER_DAMPING = 9;
 
   function animate(){
     requestAnimationFrame(animate);
 
-    // Pause simulation while tab/app is backgrounded — saves battery & avoids a huge dt jump
     if(isPaused){
       clock.getDelta();
       return;
     }
 
     const dt = Math.min(clock.getDelta(), 0.05);
-
-    // "active" is true only while an actual run is in progress and not paused — every piece of
-    // gameplay motion below is gated on it, so hitting pause genuinely freezes the whole scene.
     const active = canPlay();
 
-    // scroll floor & walls for forward-motion illusion (idle drift on menus, frozen while paused)
     const scrollRate = active ? speed*0.045 : (running ? 0 : 4);
     if(floorMat1 && floorMat1.map){
       floorMat1.map.offset.y -= dt * scrollRate;
@@ -825,9 +814,6 @@
     if(wallRMat && wallRMat.map) wallRMat.map.offset.y -= dt * scrollRate;
 
     if(active){
-      // Player steering: while dragging, the ball follows the finger almost instantly (precise
-      // control); once released, it behaves like a real rolling ball with inertia — it accelerates
-      // toward the target lane and gradually settles instead of snapping there.
       if(isDragging){
         const prevX = laneVisualX;
         laneVisualX += (playerTargetX - laneVisualX) * Math.min(1, dt*20);
@@ -843,16 +829,13 @@
       bobT += dt * 8;
       playerGroup.position.y = 0.55 + Math.sin(bobT) * 0.12;
 
-      // lean into the turn and squash/stretch based on lateral speed — gives the sphere weight
       const lean = Math.max(-0.5, Math.min(0.5, -playerVelX * 0.05));
       playerGroup.rotation.z = lean;
       const squash = Math.max(-0.16, Math.min(0.16, Math.abs(playerVelX) * 0.018));
       playerGroup.scale.set(1 - squash*0.5, 1 + squash*0.5, 1 - squash*0.5);
 
-      // forward roll speeds up slightly with lateral speed, like a ball actually gripping the ground
       playerGroup.rotation.x += dt * (3 + Math.abs(playerVelX) * 0.15);
 
-      // spawn timing
       if(!activeGate){
         spawnTimer -= dt;
         if(spawnTimer <= 0){
@@ -868,13 +851,11 @@
         }
         if(activeGate && activeGate.group.position.z > PLAYER_Z + 3){
           clearActiveGate();
-          // gap between gates shrinks faster and bottoms out lower — the main "closer together" knob
           nextSpawnDelay = Math.max(1.0 - level*0.13, 0.28);
           spawnTimer = nextSpawnDelay;
         }
       }
     } else if(!running){
-      // idle bob on the start/game-over screens
       bobT += dt * 2;
       playerGroup.position.y = 0.55 + Math.sin(bobT) * 0.12;
       playerGroup.rotation.x += dt * 3;
@@ -883,7 +864,6 @@
     renderer.render(scene, camera);
   }
 
-  /* ===================== BOOT ===================== */
   async function boot(){
     initThree();
     initInput();
