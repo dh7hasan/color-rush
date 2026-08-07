@@ -84,6 +84,7 @@
     align-self:center;
     text-align:center;
     display:flex; flex-direction:column; align-items:center; gap:3px;
+    margin-top: min(20vh, 170px);
   }
   .prompt-label{
     font-size:11px; color:#c9c3ff; opacity:.9; letter-spacing:.5px;
@@ -180,9 +181,14 @@
 
   #startOverlay{ z-index: 25; display:none; }
   #gameoverOverlay{ z-index: 21; display:none; }
+  #langOverlay{ z-index: 30; }
 
-  .lane-hint-row{ display:flex; justify-content:center; gap:14px; margin-bottom:6px; }
-  .lane-hint{ font-size:20px; opacity:.8; }
+  .lang-row{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+  .lang-btn{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    font-size:17px;
+  }
+  .lang-flag{ font-size:20px; }
 
   .dev-credit{
     margin-top:16px; font-size:11px; color:#8fe9ff; opacity:.55; letter-spacing:.5px;
@@ -255,16 +261,6 @@
     position:absolute; inset:0; pointer-events:none; z-index:3;
     background: radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(0,0,0,0.6) 100%);
   }
-
-  #langOverlay{ z-index: 30; }
-  .lang-row{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
-  .lang-btn{
-    display:flex; align-items:center; justify-content:center; gap:10px;
-    font-size:17px;
-  }
-  .lang-flag{ font-size:20px; }
-
-  .prompt-wrap{ margin-top: min(20vh, 170px); }
 </style>
 </head>
 <body>
@@ -275,6 +271,7 @@
   <div class="vignette"></div>
   <div class="flash" id="flash"></div>
 
+  <!-- شاشة اختيار اللغة عند بداية التشغيل -->
   <div class="overlay" id="langOverlay">
     <div class="card">
       <div class="title">🌐 Neon Runner</div>
@@ -386,15 +383,12 @@
   const COLOR_KEYS = Object.keys(COLORS);
   const STORAGE_KEY = 'neon-color-runner-best';
 
-  // Three difficulty modes. Easy ramps up gently, Normal is the original tuning,
-  // Hard throws you straight into a fast, tight-gap run from the first gate.
   const DIFFICULTY = {
     normal: { labelKey: 'modeNormal', baseSpeed: 14, speedPerLevel: 2.6, speedCap: 48, levelUpEvery: 3, baseSpawnGap: 1.0, spawnGapPerLevel: 0.13, minSpawnGap: 0.28, firstSpawn: 0.35 },
     hard:   { labelKey: 'modeHard',   baseSpeed: 30, speedPerLevel: 3.2, speedCap: 55, levelUpEvery: 3, baseSpawnGap: 0.55, spawnGapPerLevel: 0.13, minSpawnGap: 0.24, firstSpawn: 0.15 }
   };
   let currentMode = 'normal';
 
-  // Full UI translation table. currentLang is chosen once on the language screen.
   const STR = {
     ar: {
       scoreLabel: 'النقاط', bestLabel: 'أفضل نتيجة', levelLabel: 'المستوى',
@@ -427,38 +421,35 @@
   };
   let currentLang = 'ar';
 
-  // Device capability detection, used to keep the game smooth on lower-end phones
   const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
                      Math.min(window.innerWidth, window.innerHeight) < 480;
   const MAX_PIXEL_RATIO = IS_MOBILE ? 1.5 : 2;
 
-  /* ===================== STATE ===================== */
   let scene, camera, renderer, clock;
   let playerGroup, playerLight;
-  let floorMat1, floorMat2, floorMesh1, floorMesh2;
+  let floorMat1, floorMesh1;
   let wallLMat, wallRMat;
 
   let running = false;
   let gameOver = true;
   let laneVisualX = LANE_X[1];
-  let playerVelX = 0; // world units / second — drives realistic steering feel
+  let playerVelX = 0;
 
   let score = 0;
   let best = 0;
-  const START_LIVES = 1; // single attempt — one miss ends the run
+  const START_LIVES = 1;
   let lives = START_LIVES;
   let level = 1;
-  let speed = 14;         // units per second, forward feel = world moves toward player
+  let speed = 14;
   let bobT = 0;
-  let idleT = 0; // drives camera sway and gate glow pulsing
-  let isPaused = false;     // true while the tab/app is backgrounded
-  let manualPaused = false; // true while the user has hit the pause button
+  let idleT = 0;
+  let isPaused = false;
+  let manualPaused = false;
 
-  let activeGate = null;      // {group, colors:[], correctLane, resolved}
+  let activeGate = null;
   let nextSpawnDelay = 0.4;
   let spawnTimer = 0;
 
-  /* ===================== DOM ===================== */
   const scoreVal = document.getElementById('scoreVal');
   const bestVal = document.getElementById('bestVal');
   const levelVal = document.getElementById('levelVal');
@@ -497,8 +488,6 @@
     leaderboardTitle: document.getElementById('leaderboardTitleText')
   };
 
-  // Applies the chosen language to every static string in the UI, flips text direction,
-  // and re-renders anything already showing dynamic text (mode badge, best-score note, etc).
   function applyLanguage(lang){
     currentLang = lang;
     const t = STR[lang];
@@ -527,14 +516,10 @@
     bestNoteEl.textContent = t.bestPrefix + best;
   }
 
-
-  /* ===================== STORAGE ===================== */
   async function loadBest(){
     try{
       const res = await window.storage.get(STORAGE_KEY, false);
-      if(res && res.value){
-        best = parseInt(res.value, 10) || 0;
-      }
+      if(res && res.value) best = parseInt(res.value, 10) || 0;
     }catch(e){ best = 0; }
     bestVal.textContent = best;
   }
@@ -577,12 +562,11 @@
     }).join('');
   }
 
-  /* ===================== THREE SETUP ===================== */
   function initThree(){
     const canvas = document.getElementById('gl');
     scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x05020c, 0.026);
-    scene.background = makeSkyTexture(); // one-time gradient, costs nothing per-frame
+    scene.background = makeSkyTexture();
 
     camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 200);
     camera.position.set(0, 3.1, PLAYER_Z + 5.2);
@@ -611,7 +595,6 @@
     document.addEventListener('visibilitychange', ()=>{ isPaused = document.hidden; });
   }
 
-  // Cheap cosmic gradient sky — generated once as a texture, zero per-frame cost.
   function makeSkyTexture(){
     const c = document.createElement('canvas');
     c.width = 2; c.height = 256;
@@ -622,12 +605,9 @@
     grad.addColorStop(1, '#05020c');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 2, 256);
-    const tex = new THREE.CanvasTexture(c);
-    return tex;
+    return new THREE.CanvasTexture(c);
   }
 
-  // A single Points cloud drifting through the tunnel — one draw call total no matter the count,
-  // so it's essentially free. Recycled in-place (no allocations) each frame.
   let particles, particlePositions, particleCount;
   function buildParticles(){
     particleCount = IS_MOBILE ? 60 : 220;
@@ -647,6 +627,7 @@
     particles = new THREE.Points(geo, mat);
     scene.add(particles);
   }
+
   function updateParticles(dt, rate){
     const arr = particles.geometry.attributes.position.array;
     for(let i=0;i<particleCount;i++){
@@ -765,8 +746,6 @@
     if(!IS_MOBILE) buildTrail();
   }
 
-  // A small pool of fading ghost-spheres dropped behind the ball as it moves — cheap way to sell
-  // speed without a full post-processing bloom pipeline. Desktop/tablet only (buildPlayer gates it).
   let trailPool = [];
   let trailCursor = 0;
   let trailTimer = 0;
@@ -782,6 +761,7 @@
       trailPool.push(ghost);
     }
   }
+
   function updateTrail(dt){
     if(!trailPool.length) return;
     trailTimer -= dt;
@@ -808,7 +788,6 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  /* ===================== GATES ===================== */
   function pickPromptAndColors(){
     const meaningKey = COLOR_KEYS[Math.floor(Math.random()*COLOR_KEYS.length)];
     let inkKey;
@@ -901,10 +880,6 @@
     }
   }
 
-  function showInterstitialAd(){
-    // Adsterra Social Bar script is already loaded in <head>.
-  }
-
   function updateLivesUI(){
     const dots = livesWrap.querySelectorAll('.life-dot');
     dots.forEach((d,i)=>{ d.classList.toggle('off', i >= lives); });
@@ -960,7 +935,6 @@
     running = false;
     gameOver = true;
     clearActiveGate();
-    showInterstitialAd();
     finalScoreEl.textContent = score;
     if(score > best){
       best = score;
@@ -1078,7 +1052,7 @@
     camera.lookAt(0, 1.2, -10);
 
     if(activeGate){
-      const pulse = 0.5 + Math.sin(idleT*4.5) * 0.5; // 0..1
+      const pulse = 0.5 + Math.sin(idleT*4.5) * 0.5;
       activeGate.group.children.forEach(laneGroup=>{
         const glowPanel = laneGroup.children[3];
         const gateLight = laneGroup.children[4];
@@ -1140,7 +1114,7 @@
   }
 
   async function boot(){
-    applyLanguage(currentLang); // default (Arabic) so the language screen itself isn't blank
+    applyLanguage(currentLang);
     initThree();
     initInput();
     clock = new THREE.Clock();
